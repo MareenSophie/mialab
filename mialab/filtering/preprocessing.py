@@ -6,6 +6,7 @@ import warnings
 
 import pymia.filtering.filter as pymia_fltr
 import SimpleITK as sitk
+from pymia.filtering.registration import MultiModalRegistration
 
 
 class ImageNormalization(pymia_fltr.Filter):
@@ -29,9 +30,11 @@ class ImageNormalization(pymia_fltr.Filter):
         img_arr = sitk.GetArrayFromImage(image)
 
         # todo: normalize the image using numpy
-        warnings.warn('No normalization implemented. Returning unprocessed image.')
+        # warnings.warn('No normalization implemented. Returning unprocessed image.')
+        # normalize to values [0,1] using numpy
+        img_norm = (img_arr-img_arr.min()/(img_arr.max())-img_arr.min())
 
-        img_out = sitk.GetImageFromArray(img_arr)
+        img_out = sitk.GetImageFromArray(img_norm)
         img_out.CopyInformation(image)
 
         return img_out
@@ -78,9 +81,23 @@ class SkullStripping(pymia_fltr.Filter):
         mask = params.img_mask  # the brain mask
 
         # todo: remove the skull from the image by using the brain mask
-        warnings.warn('No skull-stripping implemented. Returning unprocessed image.')
+        # warnings.warn('No skull-stripping implemented. Returning unprocessed image.')
+        img_array = sitk.GetArrayFromImage(image)
 
-        return image
+        #mask and img do not match exactly the shape so resample mask to match size of img
+        mask_img = sitk.Resample(image1 = mask,
+                                 referenceImage = image,
+                                 transform = sitk.Transform(),
+                                 interpolator = sitk.sitkNearestNeighbor,
+                                 defaultPixelValue = 0,
+                                 outputPixelType = mask.GetPixelID())
+
+        mask_array = sitk.GetArrayFromImage(mask_img)
+        brain_array = img_array * (mask_array==1) #keep values where mask==1 (=brain)
+
+        img_out = sitk.GetImageFromArray(brain_array)
+        img_out.CopyInformation(image)
+        return img_out
 
     def __str__(self):
         """Gets a printable string representation.
@@ -125,20 +142,29 @@ class ImageRegistration(pymia_fltr.Filter):
         Returns:
             sitk.Image: The registered image.
         """
-
+        # ======================================================
         # todo: replace this filter by a registration. Registration can be costly, therefore, we provide you the
         # transformation, which you only need to apply to the image!
-        warnings.warn('No registration implemented. Returning unregistered image')
+        # warnings.warn('No registration implemented. Returning unregistered image')
 
         atlas = params.atlas
         transform = params.transformation
         is_ground_truth = params.is_ground_truth  # the ground truth will be handled slightly different
-
+        if is_ground_truth:
+            warnings.warn('No registration on ground truth. Returning unregistered image')
+            return image
+        else:
+            # apply given transform, atlas as reference image, linear interpolation
+            img_trans = sitk.Resample(image,
+                                      referenceImage=atlas,
+                                      transform= transform,
+                                      interpolator=sitk.sitkLinear,
+                                      defaultPixelValue =0) #pixel values outside the input image
         # note: if you are interested in registration, and want to test it, have a look at
         # pymia.filtering.registration.MultiModalRegistration. Think about the type of registration, i.e.
         # do you want to register to an atlas or inter-subject? Or just ask us, we can guide you ;-)
 
-        return image
+        return img_trans
 
     def __str__(self):
         """Gets a printable string representation.

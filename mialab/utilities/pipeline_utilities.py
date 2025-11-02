@@ -17,6 +17,7 @@ import mialab.filtering.postprocessing as fltr_postp
 import mialab.filtering.preprocessing as fltr_prep
 import mialab.utilities.multi_processor as mproc
 
+
 atlas_t1 = sitk.Image()
 atlas_t2 = sitk.Image()
 
@@ -30,8 +31,8 @@ def load_atlas_images(directory: str):
 
     global atlas_t1
     global atlas_t2
-    atlas_t1 = sitk.ReadImage(os.path.join(directory, 'mni_icbm152_t1_tal_nlin_sym_09a_mask.nii.gz'))
-    atlas_t2 = sitk.ReadImage(os.path.join(directory, 'mni_icbm152_t2_tal_nlin_sym_09a.nii.gz'))
+    atlas_t1 = sitk.ReadImage(os.path.join(directory, 'mni_icbm152_t1_tal_nlin_sym_09a_mask.nii'))
+    atlas_t2 = sitk.ReadImage(os.path.join(directory, 'mni_icbm152_t2_tal_nlin_sym_09a.nii'))
     if not conversion.ImageProperties(atlas_t1) == conversion.ImageProperties(atlas_t2):
         raise ValueError('T1w and T2w atlas images have not the same image properties')
 
@@ -68,20 +69,27 @@ class FeatureExtractor:
             structure.BrainImage: The image with extracted features.
         """
         # todo: add T2w features
-        warnings.warn('No features from T2-weighted image extracted.')
+        #warnings.warn('No features from T2-weighted image extracted.')
 
+        #computes and stores the atlas coordinate feature map for the T1 image (T2 not necessary bc should be registered to T1)
         if self.coordinates_feature:
             atlas_coordinates = fltr_feat.AtlasCoordinates()
             self.img.feature_images[FeatureImageTypes.ATLAS_COORD] = \
                 atlas_coordinates.execute(self.img.images[structure.BrainImageTypes.T1w])
 
+
         if self.intensity_feature:
             self.img.feature_images[FeatureImageTypes.T1w_INTENSITY] = self.img.images[structure.BrainImageTypes.T1w]
+            #added T2w intensity feature
+            self.img.feature_images[FeatureImageTypes.T2w_INTENSITY] = self.img.images[structure.BrainImageTypes.T2w]
 
         if self.gradient_intensity_feature:
             # compute gradient magnitude images
             self.img.feature_images[FeatureImageTypes.T1w_GRADIENT_INTENSITY] = \
                 sitk.GradientMagnitude(self.img.images[structure.BrainImageTypes.T1w])
+            #added T2w gradient feature
+            self.img.feature_images[FeatureImageTypes.T2w_GRADIENT_INTENSITY] = \
+                sitk.GradientMagnitude(self.img.images[structure.BrainImageTypes.T2w])
 
         self._generate_feature_matrix()
 
@@ -143,7 +151,6 @@ class FeatureExtractor:
 
         if mask is not None:
             no_voxels = np.size(mask) - np.count_nonzero(mask)
-
             if number_of_components == 1:
                 masked_image = np.ma.masked_array(image, mask=mask)
             else:
@@ -157,6 +164,19 @@ class FeatureExtractor:
 
         return image.reshape((no_voxels, number_of_components))
 
+# ======================================================
+# 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+# code explanation: brain mask is aligned to atlas for skull stripping,
+# T1 is aligned to atlasT1w,
+# T2 is aligned to atlasT2w,
+# GroundTruth labels are aligned to atlas
+#
+# Registration occurs in each pipeline where ImageRegistration() is added.
+#
+# The ImageRegistrationParameters(...) calls determine which atlas and what transform is used.
+#
+# You can safely experiment by modifying or replacing those parameter settings or the registration filter implementation
+# ======================================================
 
 def pre_process(id_: str, paths: dict, **kwargs) -> structure.BrainImage:
     """Loads and processes an image.
@@ -289,8 +309,8 @@ def init_evaluator() -> eval_.Evaluator:
     """
 
     # initialize metrics
-    metrics = [metric.DiceCoefficient()]
-    # todo: add hausdorff distance, 95th percentile (see metric.HausdorffDistance)
+    metrics = [metric.DiceCoefficient(), metric.HausdorffDistance(percentile= 95)]
+    # todo: add hausdorff distance, 95th percentile (see metric.HausdorffDistance) #done
     warnings.warn('Initialized evaluation with the Dice coefficient. Do you know other suitable metrics?')
 
     # define the labels to evaluate

@@ -28,7 +28,7 @@ def main(data_dir):
     print('unzip data')
     unzip_data_if_needed(data_dir)
 
-    image_names, label_names = get_required_filenames()
+    image_names, label_names = get_required_filenames(native = True, brain_mask = True)
     subject_files = get_files(data_dir, image_names, label_names)
     train_subjects, test_subjects = split_dataset(0.7, subject_files)
 
@@ -75,25 +75,19 @@ def get_required_filenames(native: bool = True, brain_mask: bool = False, bias_c
     images = []
     labels = []
     if native:
-        images.append(('T1w/T1w_acpc_dc.nii.gz', 'T1native.nii.gz'))
-        images.append(('T1w/T2w_acpc_dc.nii.gz', 'T2native.nii.gz'))
+        images.append(('T1native.nii.gz', 'T1native.nii.gz'))
+        images.append(('T2native.nii.gz', 'T2native.nii.gz'))
         if bias_corr:
-            images.append(('T1w/T1w_acpc_dc_restore_brain.nii.gz', 'T1native_biasfieldcorr_noskull.nii.gz'))
-            images.append(('T1w/T2w_acpc_dc_restore_brain.nii.gz', 'T2native_biasfieldcorr_noskull.nii.gz'))
-        labels.append(('T1w/aparc+aseg.nii.gz', 'labels_native.nii.gz'))
+            warnings.warn("No bias corrigated files in the dataset")
+        labels.append(('labels_native.nii.gz', 'labels_native.nii.gz'))
         if brain_mask:
-            labels.append(('T1w/brainmask_fs.nii.gz', 'Brainmasknative.nii.gz'))
+            labels.append(('Brainmasknative.nii.gz', 'Brainmasknative.nii.gz'))
     else:
-        images.append(('MNINonLinear/T1w.nii.gz', 'T1mni.nii.gz'))
-        images.append(('MNINonLinear/T2w.nii.gz', 'T2mni.nii.gz'))
-        if bias_corr:
-            images.append(('MNINonLinear/T1w_restore_brain.nii.gz', 'T1mni_biasfieldcorr_noskull.nii.gz'))
-            images.append(('MNINonLinear/T2w_restore_brain.nii.gz', 'T2mni_biasfieldcorr_noskull.nii.gz'))
-        labels.append(('MNINonLinear/aparc+aseg.nii.gz', 'labels_mniatlas.nii.gz'))
-        if brain_mask:
-            labels.append(('MNINonLinear/brainmask_fs.nii.gz', 'Brainmaskmni.nii.gz'))
+        # MNI-space not available #atlas is included elsewhere?
+        warnings.warn("MNI-space data not available in this dataset. Skipping MNI-space images and labels.")
 
     return tuple(images), tuple(labels)
+
 
 
 def get_files(data_dir, image_names, label_names):
@@ -120,6 +114,7 @@ def get_files(data_dir, image_names, label_names):
         label_files = join_and_check_path(id_, label_names)
         subject_files[id_] = {'images': image_files, 'labels': label_files}
     return subject_files
+
 
 
 def split_dataset(train_split, subject_files):
@@ -225,7 +220,7 @@ class MergeLabel(Transform):
         merged_img = np.zeros_like(np_img)
 
         for new_label, labels_to_merge in self.to_combine.items():
-            indices = np.reshape(np.in1d(np_img.ravel(), labels_to_merge, assume_unique=True), np_img.shape)
+            indices = np.isin(np_img, labels_to_merge)
             merged_img[indices] = new_label
 
         out_img = sitk.GetImageFromArray(merged_img)
